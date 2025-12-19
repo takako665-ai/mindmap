@@ -13,22 +13,27 @@ import 'reactflow/dist/style.css';
 import { v4 as uuidv4 } from 'uuid';
 
 //一覧画面コンポーネント
-function MapListView({ onSelectMap, onCreateMap}){
-  const[maps,setMaps] = React.useState({}); // 全マップのリスト
+function MapListView({ onSelectMap, onCreateMap }) {
+  const [maps, setMaps] = React.useState({}); // 全マップのリスト
 
   //初回読み込み
   React.useEffect(() => {
     const saved = localStorage.getItem('mindmaps');
-    if(saved){
-      setMaps(JSON.parse(saved));
+    if (saved && saved !== 'undefined') {
+      try {
+        setMaps(JSON.parse(saved));
+      } catch (error) {
+        console.error('マップの読み込みに失敗:', error);
+        setMaps({});
+      }
     }
-  },[]);
+  }, []);
 
   //マップを削除
   const deleteMap = (mapId) => {
-    if(!window.confirm('このマップを削除しますか？'))return;
+    if (!window.confirm('このマップを削除しますか？')) return;
 
-    const newMaps = {...maps};
+    const newMaps = { ...maps };
     delete newMaps[mapId];
     setMaps(newMaps);
     localStorage.setItem('mindmaps', JSON.stringify(newMaps));
@@ -39,17 +44,82 @@ function MapListView({ onSelectMap, onCreateMap}){
     const currentName = maps[mapId].name;
     const newName = prompt('新しい名前を入力してください', currentName);
 
-    if(!newName || newName === currentName) return; //キャンセルまたは同じ名前なら何もしない
+    if (!newName || newName === currentName) return; //キャンセルまたは同じ名前なら何もしない
 
-    const newMaps = { ...maps};
+    const newMaps = { ...maps };
     newMaps[mapId].name = newName;
     setMaps(newMaps);
     localStorage.setItem('mindmaps', JSON.stringify(newMaps));
   };
 
-  return(
-    <div style={{padding:'40px',maxWidth:'800px',margin:'0 auto'}}>
-      <h1 style={{marginBottom:'30px'}}>マインドマップ一覧</h1>
+  const exportAllMaps = () => {
+    //全マップをJSON文字列に変換
+    const jsonString = JSON.stringify(maps, null, 2);
+
+    //Blobオブジェクトを作成
+    const blob = new Blob([jsonString], { type: 'application/json' });
+
+    //ダウンロード用のURLを生成
+    const url = URL.createObjectURL(blob);
+
+    //非表示のリンクを作成してクリック
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `mindmaps_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+
+    //メモリ開放
+    URL.revokeObjectURL(url);
+
+    alert('エクスポートしました！');
+  }
+
+  //インポート機能
+  const importMaps = (event) => {
+    const file = event.target.files[0];
+
+    if (!file) return;
+
+    //FileReaderでファイルを読み込む
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      try {
+        //JSON文字列をオブジェクトに変換
+        const importedMaps = JSON.parse(reader.result);
+
+        //データ形式のチェック
+        if (typeof importedMaps != 'object') {
+          alert('無効なファイル形式です');
+          return;
+        }
+
+        //確認メッセージ
+        if (!window.confirm('インポートすると現在のデータが上書きされます。よろしいですか？')) {
+          return;
+        }
+
+        //マップを復元
+        setMaps(importedMaps);
+        localStorage.setItem('mindmaps', JSON.stringify(importedMaps));
+
+        alert('インポートしました！');
+      } catch (error) {
+        alert('ファイルの読み込みに失敗しました');
+        console.error(error);
+      }
+    };
+
+    //ファイルをテキストとして読み込み開始
+    reader.readAsText(file);
+
+    //input要素をリセット（同じファイルを再度選択できるように）
+    event.target.value = '';
+  };
+
+  return (
+    <div style={{ padding: '40px', maxWidth: '800px', margin: '0 auto' }}>
+      <h1 style={{ marginBottom: '30px' }}>マインドマップ一覧</h1>
       <button
         onClick={onCreateMap}
         style={{
@@ -65,7 +135,43 @@ function MapListView({ onSelectMap, onCreateMap}){
       >
         ➕ 新しいマップを作成
       </button>
-      
+
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '30px' }}>
+        <button
+          onClick={exportAllMaps}
+          style={{
+            padding: '12px 24px',
+            fontSize: '16px',
+            background: '#007bff',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: 'pointer'
+          }}
+        >
+          📤 エクスポート
+        </button>
+
+        <label style={{
+          padding: '12px 24px',
+          fontSize: '16px',
+          background: '#17a2b8',
+          color: 'white',
+          border: 'none',
+          borderRadius: '8px',
+          cursor: 'pointer',
+          display: 'inline-block'
+        }}>
+          📥 インポート
+          <input
+            type="file"
+            accept=".json"
+            onChange={importMaps}
+            style={{ display: 'none' }}
+          />
+        </label>
+      </div>
+
       <div style={{ display: 'grid', gap: '15px' }}>
         {Object.keys(maps).map((mapId) => (
           <div
@@ -80,8 +186,8 @@ function MapListView({ onSelectMap, onCreateMap}){
             }}
           >
             <div>
-              <h3 
-                style={{ 
+              <h3
+                style={{
                   margin: '0 0 10px 0',
                   cursor: 'pointer',          // カーソルをポインターに
                   color: '#007bff'            // 青色でクリックできることを示す
@@ -95,7 +201,7 @@ function MapListView({ onSelectMap, onCreateMap}){
                 ノード数: {maps[mapId].nodes?.length || 0}
               </p>
             </div>
-            
+
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
                 onClick={() => onSelectMap(mapId)}
@@ -126,7 +232,7 @@ function MapListView({ onSelectMap, onCreateMap}){
             </div>
           </div>
         ))}
-        
+
         {Object.keys(maps).length === 0 && (
           <p style={{ textAlign: 'center', color: '#999', marginTop: '50px' }}>
             まだマップがありません。新しいマップを作成してください。
@@ -170,7 +276,7 @@ function CustomNode({ data, hasLeft, hasRight, id, onLabelChange }) {
   };
 
   return (
-    <div 
+    <div
       style={{
         padding: '10px 20px',
         border: '2px solid #333',
@@ -183,19 +289,19 @@ function CustomNode({ data, hasLeft, hasRight, id, onLabelChange }) {
         setIsEditing(true);  // 編集モード開始
       }}
     >
-      <Handle 
-        type="target" 
-        position={Position.Left} 
+      <Handle
+        type="target"
+        position={Position.Left}
         id="item1"
         style={{ opacity: hasLeft ? 1 : 0 }}
       />
-      <Handle 
-        type="target" 
-        position={Position.Right} 
+      <Handle
+        type="target"
+        position={Position.Right}
         id="item2"
         style={{ opacity: hasRight ? 1 : 0 }}
       />
-      
+
       {/* 編集モードか表示モードか切り替え */}
       {isEditing ? (
         <input
@@ -218,16 +324,16 @@ function CustomNode({ data, hasLeft, hasRight, id, onLabelChange }) {
       ) : (
         <div>{data.label}</div>  // 通常表示
       )}
-      
-      <Handle 
-        type="source" 
-        position={Position.Left} 
+
+      <Handle
+        type="source"
+        position={Position.Left}
         id="item1"
         style={{ opacity: hasLeft ? 1 : 0 }}
       />
-      <Handle 
-        type="source" 
-        position={Position.Right} 
+      <Handle
+        type="source"
+        position={Position.Right}
         id="item2"
         style={{ opacity: hasRight ? 1 : 0 }}
       />
@@ -242,19 +348,24 @@ const nodeTypes = {
 export default function App() {
 
   //画面の状態管理（'list': 一覧画面, 'edit': 編集画面）
-  const[currentView, setCurrentView] = React.useState('List');
+  const [currentView, setCurrentView] = React.useState('List');
 
   //現在編集中のマップID
   const [currentMapId, setCurrentMapId] = React.useState(null);
 
-// 全てのマップを読み込む
-const loadAllMaps = () => {
-  const saved = localStorage.getItem('mindmaps');  // 'mindmap' → 'mindmaps'に変更
-  if (saved) {
-    return JSON.parse(saved);
-  }
-  return {};  // 初期値は空オブジェクト
-};
+  // 全てのマップを読み込む
+  const loadAllMaps = () => {
+    const saved = localStorage.getItem('mindmaps');
+    if (saved && saved !== 'undefined') {  // 'undefined'文字列もチェック
+      try {
+        return JSON.parse(saved);
+      } catch (error) {
+        console.error('マップの読み込みエラー:', error);
+        return {};
+      }
+    }
+    return {};
+  };
 
   //特定のマップを読み込む
   const loadSaveMap = (mapId) => {
@@ -263,16 +374,16 @@ const loadAllMaps = () => {
   }
 
   const savedData = currentMapId ? loadSaveMap(currentMapId) : null;
-  
+
   const initialNodes = savedData ? savedData.nodes : [
-    { 
-      id: '1', 
+    {
+      id: '1',
       type: 'custom',
-      position: { x: 250, y: 0 }, 
-      data: { label: 'CCNA マインドマップ' } 
+      position: { x: 250, y: 0 },
+      data: { label: 'CCNA マインドマップ' }
     }
   ];
-  
+
   const initialEdges = savedData ? savedData.edges : [];
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
@@ -281,33 +392,33 @@ const loadAllMaps = () => {
   // ノードのラベルを更新する関数
   const updateNodeLabel = useCallback((nodeId, newLabel) => {
     setNodes((nds) =>
-      nds.map((n) => 
-        n.id === nodeId 
+      nds.map((n) =>
+        n.id === nodeId
           ? { ...n, data: { label: newLabel } }  // 該当ノードのラベルを更新
           : n  // その他はそのまま
       )
     );
   }, [setNodes]);  // setNodesが変わったら再作成
-  
+
   const customNodeTypes = React.useMemo(() => ({
     custom: (props) => {
       // このノードに左側の線が繋がっているか確認
-      const hasLeftConnection = edges.some(e => 
-        (e.source === props.id && e.sourceHandle === 'item1') || 
+      const hasLeftConnection = edges.some(e =>
+        (e.source === props.id && e.sourceHandle === 'item1') ||
         (e.target === props.id && e.targetHandle === 'item1')
       );
-      const hasRightConnection = edges.some(e => 
-        (e.source === props.id && e.sourceHandle === 'item2') || 
+      const hasRightConnection = edges.some(e =>
+        (e.source === props.id && e.sourceHandle === 'item2') ||
         (e.target === props.id && e.targetHandle === 'item2')
       );
       // 確認結果をCustomNodeに渡す
-      return <CustomNode {...props} 
-        hasLeft={hasLeftConnection} 
+      return <CustomNode {...props}
+        hasLeft={hasLeftConnection}
         hasRight={hasRightConnection}
-        onLabelChange={updateNodeLabel} 
-       />;
+        onLabelChange={updateNodeLabel}
+      />;
     }
-  }), [edges, updateNodeLabel] );
+  }), [edges, updateNodeLabel]);
 
   const [selectedNode, setSelectedNode] = useState(null);
 
@@ -325,14 +436,14 @@ const loadAllMaps = () => {
       type: 'custom',
       position: {
         x: selectedNode.position.x + 250,
-        y: selectedNode.position.y + (childrenCount * 100) 
+        y: selectedNode.position.y + (childrenCount * 100)
       },
       data: { label: '新しいノード' }
     };
     setNodes((nds) => [...nds, newNode]);
-    setEdges((eds) => [...eds, { 
-      id: uuidv4(), 
-      source: selectedNode.id, 
+    setEdges((eds) => [...eds, {
+      id: uuidv4(),
+      source: selectedNode.id,
       target: newNode.id,
       sourceHandle: 'item2',
       targetHandle: 'item1'
@@ -350,9 +461,9 @@ const loadAllMaps = () => {
 
   // 保存機能
   const saveMap = () => {
-    if(!currentMapId) return; // マップIDがない場合は保存しない
+    if (!currentMapId) return; // マップIDがない場合は保存しない
 
-    const allMaps =loadAllMaps(); // 全マップを取得
+    const allMaps = loadAllMaps(); // 全マップを取得
 
     // 現在のマップを更新
     allMaps[currentMapId] = {
@@ -416,12 +527,12 @@ const loadAllMaps = () => {
 
   // 自動保存: nodesかedgesが変更されたら自動で保存
   React.useEffect(() => {
-    if(!currentMapId) return; // マップIDがない場合は保存しない
+    if (!currentMapId) return; // マップIDがない場合は保存しない
 
     const allMaps = loadAllMaps();
 
     allMaps[currentMapId] = {
-      name:allMaps[currentMapId]?.name || '新しいマップ',
+      name: allMaps[currentMapId]?.name || '新しいマップ',
       nodes: nodes,
       edges: edges
     };
@@ -431,8 +542,8 @@ const loadAllMaps = () => {
   }, [nodes, edges, currentMapId]);  // nodesかedgesかcurrentMapIdが変わったら実行
 
   //新しいマップを作製
-  const createNewMap=() =>{
-    const newMapId =uuidv4();
+  const createNewMap = () => {
+    const newMapId = uuidv4();
     const allMaps = loadAllMaps();
 
     allMaps[newMapId] = {
@@ -441,25 +552,33 @@ const loadAllMaps = () => {
         {
           id: '1',
           type: 'custom',
-          position: {x:250,y:0},
-          date: {label:'新しいマインドマップ'}
+          position: { x: 250, y: 0 },
+          date: { label: '新しいマインドマップ' }
         }
       ],
-      edge:[]
+      edges: []
     };
 
-    localStorage.setItem('mindmaps',JSON.stringify(allMaps));
+    localStorage.setItem('mindmaps', JSON.stringify(allMaps));
 
     setCurrentMapId(newMapId);
     setCurrentView('edit');
   };
   //マップを選択して開く
   const openMap = (mapId) => {
+    const mapData = loadSaveMap(mapId);
+
+    if (!mapData) {
+      alert('マップが見つかりません');
+      return;
+    }
+
+    //ノードとエッジを更新
+    setNodes(mapData.nodes || []);
+    setEdges(mapData.edges || []);
+
     setCurrentMapId(mapId);
     setCurrentView('edit');
-
-    //ページをリロードして最新データを読み込む
-    window.location.reload();
   };
   //一覧に戻る
   const backToList = () => {
@@ -468,22 +587,22 @@ const loadAllMaps = () => {
   };
 
   //一覧画面を表示する場合
-  if(currentView === 'list'){
+  if (currentView === 'list') {
     return <MapListView onSelectMap={openMap} onCreateMap={createNewMap} />;
   }
 
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
-      <div style={{ 
-        position: 'absolute', 
-        zIndex: 10, 
-        left: 10, 
+      <div style={{
+        position: 'absolute',
+        zIndex: 10,
+        left: 10,
         top: 10,
         display: 'flex',
         flexWrap: 'wrap',
         gap: '5px'
       }}>
-        <button 
+        <button
           onClick={backToList}
           style={{
             padding: '12px 16px',
@@ -499,7 +618,7 @@ const loadAllMaps = () => {
           ← 一覧に戻る
         </button>
 
-        <button 
+        <button
           onClick={addNode}
           style={{
             padding: '12px 16px',
@@ -509,7 +628,7 @@ const loadAllMaps = () => {
         >
           ノードを追加
         </button>
-        <button 
+        <button
           onClick={editNode}
           style={{
             padding: '12px 16px',
@@ -519,7 +638,7 @@ const loadAllMaps = () => {
         >
           ✏️ 編集
         </button>
-        <button 
+        <button
           onClick={deleteNode}
           style={{
             padding: '12px 16px',
@@ -529,7 +648,7 @@ const loadAllMaps = () => {
         >
           🗑 削除
         </button>
-        <button 
+        <button
           onClick={saveMap}
           style={{
             padding: '12px 16px',
