@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect, useRef, useMemo } from 'react';
 import ReactFlow, {
   MiniMap,
   Controls,
@@ -12,672 +12,239 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { v4 as uuidv4 } from 'uuid';
 
-//一覧画面コンポーネント
-function MapListView({ onSelectMap, onCreateMap }) {
-  const [maps, setMaps] = React.useState({}); // 全マップのリスト
-
-  //初回読み込み
-  React.useEffect(() => {
-    const saved = localStorage.getItem('mindmaps');
-    if (saved && saved !== 'undefined') {
-      try {
-        setMaps(JSON.parse(saved));
-      } catch (error) {
-        console.error('マップの読み込みに失敗:', error);
-        setMaps({});
-      }
+/**
+ * 【超重要】エラーの強制停止
+ * 画面を埋め尽くしている ResizeObserver エラーをブラウザが検知する前に握りつぶします。
+ */
+if (typeof window !== 'undefined') {
+  const originalError = console.error;
+  console.error = (...args) => {
+    if (args[0]?.toString().includes('ResizeObserver')) return;
+    originalError(...args);
+  };
+  window.addEventListener('error', (e) => {
+    if (e.message.includes('ResizeObserver')) {
+      e.stopImmediatePropagation();
+      const overlay = document.querySelector('iframe'); // エラー画面を消す
+      if (overlay) overlay.style.display = 'none';
     }
+  });
+}
+
+// --- 1. カラーピッカー ---
+const ColorPicker = ({ selectedNode, onColorChange }) => {
+  if (!selectedNode) return null;
+  const colors = [
+    { name: '標準', value: '#333' },
+    { name: '重要', value: '#dc3545' },
+    { name: '注意', value: '#ffc107' },
+    { name: '完了', value: '#28a745' },
+    { name: '基礎', value: '#007bff' },
+    { name: '紫', value: '#6f42c1' },
+  ];
+  return (
+    <div style={{ position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)', background: 'white', border: '1px solid #ccc', borderRadius: '30px', padding: '10px 20px', boxShadow: '0 4px 15px rgba(0,0,0,0.2)', zIndex: 1000, display: 'flex', gap: '10px' }}>
+      {colors.map((c) => (
+        <div key={c.value} onClick={() => onColorChange(c.value)} style={{ width: '25px', height: '25px', borderRadius: '50%', background: c.value, cursor: 'pointer', border: selectedNode.data.color === c.value ? '3px solid #000' : '2px solid #eee' }} />
+      ))}
+    </div>
+  );
+};
+
+// --- 2. カスタムノード (memo化で再レンダリングを防止) ---
+const CustomNode = React.memo(({ id, data, hasLeft, hasRight, onLabelChange }) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [text, setText] = useState(data.label);
+  const inputRef = useRef(null);
+
+  useEffect(() => { if (isEditing) inputRef.current?.focus(); }, [isEditing]);
+
+  const save = () => { onLabelChange(id, text); setIsEditing(false); };
+
+  return (
+    <div style={{ padding: '10px 15px', border: `2px solid ${data.color || '#333'}`, borderRadius: '8px', background: 'white', minWidth: '100px', textAlign: 'center' }} onDoubleClick={() => setIsEditing(true)}>
+      <Handle type="target" position={Position.Left} style={{ opacity: hasLeft ? 1 : 0.2 }} />
+      {isEditing ? (
+        <input ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} onBlur={save} onKeyDown={(e) => e.key === 'Enter' && save()} style={{ border: 'none', outline: 'none', width: '100%', textAlign: 'center' }} />
+      ) : (
+        <div style={{ fontWeight: 'bold' }}>{data.label}</div>
+      )}
+      <Handle type="source" position={Position.Right} style={{ opacity: hasRight ? 1 : 0.2 }} />
+    </div>
+  );
+});
+
+// --- 3. 一覧画面 ---
+const MapListView = ({ onSelect, onCreate }) => {
+  const [maps, setMaps] = useState({});
+  useEffect(() => {
+    const saved = localStorage.getItem('mindmaps');
+    if (saved) setMaps(JSON.parse(saved));
   }, []);
 
-  //マップを削除
-  const deleteMap = (mapId) => {
-    if (!window.confirm('このマップを削除しますか？')) return;
-
-    const newMaps = { ...maps };
-    delete newMaps[mapId];
-    setMaps(newMaps);
-    localStorage.setItem('mindmaps', JSON.stringify(newMaps));
-  };
-
-  //マップ名を変更
-  const renameMap = (mapId) => {
-    const currentName = maps[mapId].name;
-    const newName = prompt('新しい名前を入力してください', currentName);
-
-    if (!newName || newName === currentName) return; //キャンセルまたは同じ名前なら何もしない
-
-    const newMaps = { ...maps };
-    newMaps[mapId].name = newName;
-    setMaps(newMaps);
-    localStorage.setItem('mindmaps', JSON.stringify(newMaps));
-  };
-
-  const exportAllMaps = () => {
-    //全マップをJSON文字列に変換
-    const jsonString = JSON.stringify(maps, null, 2);
-
-    //Blobオブジェクトを作成
-    const blob = new Blob([jsonString], { type: 'application/json' });
-
-    //ダウンロード用のURLを生成
+  const exportAll = () => {
+    const blob = new Blob([JSON.stringify(maps)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-
-    //非表示のリンクを作成してクリック
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `mindmaps_backup_${new Date().toISOString().slice(0, 10)}.json`;
-    link.click();
-
-    //メモリ開放
-    URL.revokeObjectURL(url);
-
-    alert('エクスポートしました！');
-  }
-
-  //インポート機能
-  const importMaps = (event) => {
-    const file = event.target.files[0];
-
-    if (!file) return;
-
-    //FileReaderでファイルを読み込む
-    const reader = new FileReader();
-
-    reader.onload = () => {
-      try {
-        //JSON文字列をオブジェクトに変換
-        const importedMaps = JSON.parse(reader.result);
-
-        //データ形式のチェック
-        if (typeof importedMaps != 'object') {
-          alert('無効なファイル形式です');
-          return;
-        }
-
-        //確認メッセージ
-        if (!window.confirm('インポートすると現在のデータが上書きされます。よろしいですか？')) {
-          return;
-        }
-
-        //マップを復元
-        setMaps(importedMaps);
-        localStorage.setItem('mindmaps', JSON.stringify(importedMaps));
-
-        alert('インポートしました！');
-      } catch (error) {
-        alert('ファイルの読み込みに失敗しました');
-        console.error(error);
-      }
-    };
-
-    //ファイルをテキストとして読み込み開始
-    reader.readAsText(file);
-
-    //input要素をリセット（同じファイルを再度選択できるように）
-    event.target.value = '';
+    const a = document.createElement('a'); a.href = url; a.download = 'mindmaps_backup.json'; a.click();
   };
 
   return (
-    <div style={{ padding: '40px', maxWidth: '800px', margin: '0 auto' }}>
-      <h1 style={{ marginBottom: '30px' }}>マインドマップ一覧</h1>
-      <button
-        onClick={onCreateMap}
-        style={{
-          padding: '15px 30px',
-          fontSize: '18px',
-          background: '#28a745',
-          color: 'white',
-          border: 'none',
-          borderRadius: '8px',
-          cursor: 'pointer',
-          marginBottom: '30px'
-        }}
-      >
-        ➕ 新しいマップを作成
-      </button>
-
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '30px' }}>
-        <button
-          onClick={exportAllMaps}
-          style={{
-            padding: '12px 24px',
-            fontSize: '16px',
-            background: '#007bff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            cursor: 'pointer'
-          }}
-        >
-          📤 エクスポート
-        </button>
-
-        <label style={{
-          padding: '12px 24px',
-          fontSize: '16px',
-          background: '#17a2b8',
-          color: 'white',
-          border: 'none',
-          borderRadius: '8px',
-          cursor: 'pointer',
-          display: 'inline-block'
-        }}>
-          📥 インポート
-          <input
-            type="file"
-            accept=".json"
-            onChange={importMaps}
-            style={{ display: 'none' }}
-          />
-        </label>
+    <div style={{ padding: '40px', maxWidth: '800px', margin: '0 auto', fontFamily: 'sans-serif' }}>
+      <h1>🧠 MindMap List</h1>
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+        <button onClick={onCreate} style={{ padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>＋ 新規作成</button>
+        <button onClick={exportAll} style={{ padding: '10px 20px', background: '#007bff', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>📤 バックアップ</button>
       </div>
-
-      <div style={{ display: 'grid', gap: '15px' }}>
-        {Object.keys(maps).map((mapId) => (
-          <div
-            key={mapId}
-            style={{
-              border: '2px solid #ddd',
-              borderRadius: '8px',
-              padding: '20px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}
-          >
-            <div>
-              <h3
-                style={{
-                  margin: '0 0 10px 0',
-                  cursor: 'pointer',          // カーソルをポインターに
-                  color: '#007bff'            // 青色でクリックできることを示す
-                }}
-                onClick={() => renameMap(mapId)}  // クリックで名前変更
-                title="クリックして名前を変更"      // ホバー時のヒント
-              >
-                {maps[mapId].name}
-              </h3>
-              <p style={{ margin: 0, color: '#666' }}>
-                ノード数: {maps[mapId].nodes?.length || 0}
-              </p>
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                onClick={() => onSelectMap(mapId)}
-                style={{
-                  padding: '10px 20px',
-                  background: '#007bff',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                開く
-              </button>
-              <button
-                onClick={() => deleteMap(mapId)}
-                style={{
-                  padding: '10px 20px',
-                  background: '#dc3545',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                削除
-              </button>
+      <div style={{ display: 'grid', gap: '10px' }}>
+        {Object.entries(maps).map(([id, m]) => (
+          <div key={id} style={{ border: '1px solid #ddd', padding: '15px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>{m.name}</span>
+            <div style={{ display: 'flex', gap: '5px' }}>
+              <button onClick={() => onSelect(id)} style={{ padding: '5px 15px', background: '#007bff', color: 'white', border: 'none', borderRadius: '4px' }}>開く</button>
+              <button onClick={() => { if (window.confirm('消去しますか？')) { const n = { ...maps }; delete n[id]; setMaps(n); localStorage.setItem('mindmaps', JSON.stringify(n)); } }} style={{ padding: '5px 15px', background: '#eee', border: 'none', borderRadius: '4px' }}>削除</button>
             </div>
           </div>
         ))}
-
-        {Object.keys(maps).length === 0 && (
-          <p style={{ textAlign: 'center', color: '#999', marginTop: '50px' }}>
-            まだマップがありません。新しいマップを作成してください。
-          </p>
-        )}
       </div>
     </div>
   );
-}
-
-// カスタムノード　受け取った情報で表示制御
-function CustomNode({ data, hasLeft, hasRight, id, onLabelChange }) {
-  const [isEditing, setIsEditing] = React.useState(false);  // 編集モードかどうか
-  const [label, setLabel] = React.useState(data.label);  // 編集中のテキスト
-  const inputRef = React.useRef(null);  // 入力欄への参照
-
-  // 編集開始時にフォーカス
-  React.useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus();  // 自動で入力欄にカーソルを移動
-      inputRef.current.select();  // テキストを全選択
-    }
-  }, [isEditing]);
-
-  // Enterキーで確定、Escキーでキャンセル
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      onLabelChange(id, label);  // ラベルを更新
-      setIsEditing(false);  // 編集モード終了
-    } else if (e.key === 'Escape') {
-      setLabel(data.label);  // 元に戻す
-      setIsEditing(false);  // 編集モード終了
-    }
-  };
-
-  // フォーカスが外れたら確定
-  const handleBlur = () => {
-    onLabelChange(id, label);   // ラベルを更新
-    setIsEditing(false);  // 編集モード終了
-  };
-
-  return (
-    <div
-      style={{
-        padding: '10px 20px',
-        border: '2px solid #333',
-        borderRadius: '8px',
-        background: 'white',
-        minWidth: '100px'  // 最小幅を設定
-      }}
-      onDoubleClick={(e) => {
-        e.stopPropagation();  // ReactFlowのイベントを止める。子がクリックされたときに親が反応しないように対応
-        setIsEditing(true);  // 編集モード開始
-      }}
-    >
-      <Handle
-        type="target"
-        position={Position.Left}
-        id="item1"
-        style={{ opacity: hasLeft ? 1 : 0 }}
-      />
-      <Handle
-        type="target"
-        position={Position.Right}
-        id="item2"
-        style={{ opacity: hasRight ? 1 : 0 }}
-      />
-
-      {/* 編集モードか表示モードか切り替え */}
-      {isEditing ? (
-        <input
-          ref={inputRef}
-          type="text"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}  // 入力に応じて更新
-          onKeyDown={handleKeyDown}  // キーボード操作
-          onBlur={handleBlur}  // フォーカスが外れたら確定
-          style={{
-            border: 'none',
-            outline: 'none',
-            background: 'transparent',
-            fontSize: 'inherit',
-            fontFamily: 'inherit',
-            width: '100%',
-            padding: 0
-          }}
-        />
-      ) : (
-        <div>{data.label}</div>  // 通常表示
-      )}
-
-      <Handle
-        type="source"
-        position={Position.Left}
-        id="item1"
-        style={{ opacity: hasLeft ? 1 : 0 }}
-      />
-      <Handle
-        type="source"
-        position={Position.Right}
-        id="item2"
-        style={{ opacity: hasRight ? 1 : 0 }}
-      />
-    </div>
-  );
-}
-
-const nodeTypes = {
-  custom: (props) => <CustomNode {...props} />
 };
 
+// --- 4. メイン ---
 export default function App() {
+  const [view, setView] = useState('list');
+  const [mapId, setMapId] = useState(null);
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [selected, setSelected] = useState(null);
+  const [history, setHistory] = useState([]);
 
-  //画面の状態管理（'list': 一覧画面, 'edit': 編集画面）
-  const [currentView, setCurrentView] = React.useState('List');
+  // 履歴保存
+  const pushHistory = useCallback((n, e) => {
+    setHistory(prev => [...prev.slice(-20), { n: JSON.parse(JSON.stringify(n)), e: JSON.parse(JSON.stringify(e)) }]);
+  }, []);
 
-  //現在編集中のマップID
-  const [currentMapId, setCurrentMapId] = React.useState(null);
+  const undo = useCallback(() => {
+    // 履歴が少ない場合は何もしない
+    if (history.length < 2) return;
 
-  // 全てのマップを読み込む
-  const loadAllMaps = () => {
-    const saved = localStorage.getItem('mindmaps');
-    if (saved && saved !== 'undefined') {  // 'undefined'文字列もチェック
-      try {
-        return JSON.parse(saved);
-      } catch (error) {
-        console.error('マップの読み込みエラー:', error);
-        return {};
+    setHistory(prev => {
+      const newHistory = [...prev];
+      // 一番最後（現在の状態）を捨てる
+      newHistory.pop();
+
+      // その一つ前の状態を取り出して適用する
+      const prevState = newHistory[newHistory.length - 1];
+      if (prevState) {
+        setNodes(prevState.n);
+        setEdges(prevState.e);
       }
-    }
-    return {};
-  };
 
-  //特定のマップを読み込む
-  const loadSaveMap = (mapId) => {
-    const allMaps = loadAllMaps();
-    return allMaps[mapId] || null;
-  }
-
-  const savedData = currentMapId ? loadSaveMap(currentMapId) : null;
-
-  const initialNodes = savedData ? savedData.nodes : [
-    {
-      id: '1',
-      type: 'custom',
-      position: { x: 250, y: 0 },
-      data: { label: 'CCNA マインドマップ' }
-    }
-  ];
-
-  const initialEdges = savedData ? savedData.edges : [];
-
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-
-  // ノードのラベルを更新する関数
-  const updateNodeLabel = useCallback((nodeId, newLabel) => {
-    setNodes((nds) =>
-      nds.map((n) =>
-        n.id === nodeId
-          ? { ...n, data: { label: newLabel } }  // 該当ノードのラベルを更新
-          : n  // その他はそのまま
-      )
-    );
-  }, [setNodes]);  // setNodesが変わったら再作成
-
-  const customNodeTypes = React.useMemo(() => ({
-    custom: (props) => {
-      // このノードに左側の線が繋がっているか確認
-      const hasLeftConnection = edges.some(e =>
-        (e.source === props.id && e.sourceHandle === 'item1') ||
-        (e.target === props.id && e.targetHandle === 'item1')
-      );
-      const hasRightConnection = edges.some(e =>
-        (e.source === props.id && e.sourceHandle === 'item2') ||
-        (e.target === props.id && e.targetHandle === 'item2')
-      );
-      // 確認結果をCustomNodeに渡す
-      return <CustomNode {...props}
-        hasLeft={hasLeftConnection}
-        hasRight={hasRightConnection}
-        onLabelChange={updateNodeLabel}
-      />;
-    }
-  }), [edges, updateNodeLabel]);
-
-  const [selectedNode, setSelectedNode] = useState(null);
-
-  const onConnect = useCallback(
-    (params) => setEdges((eds) => addEdge(params, eds)),
-    [setEdges]
-  );
-
-  // ノード追加
-  const addNode = () => {
-    if (!selectedNode) return alert('親ノードをクリックしてから追加してください');
-    const childrenCount = edges.filter(e => e.source === selectedNode.id).length;
-    const newNode = {
-      id: uuidv4(),
-      type: 'custom',
-      position: {
-        x: selectedNode.position.x + 250,
-        y: selectedNode.position.y + (childrenCount * 100)
-      },
-      data: { label: '新しいノード' }
-    };
-    setNodes((nds) => [...nds, newNode]);
-    setEdges((eds) => [...eds, {
-      id: uuidv4(),
-      source: selectedNode.id,
-      target: newNode.id,
-      sourceHandle: 'item2',
-      targetHandle: 'item1'
-    }]);
-  };
-
-  // ノード削除
-  const deleteNode = () => {
-    if (!selectedNode) return alert('削除したいノードを選択してください');
-    const idsToDelete = getDescendants(selectedNode.id);
-    setNodes((nds) => nds.filter((n) => !idsToDelete.includes(n.id)));
-    setEdges((eds) => eds.filter((e) => !idsToDelete.includes(e.source) && !idsToDelete.includes(e.target)));
-    setSelectedNode(null);
-  };
-
-  // 保存機能
-  const saveMap = () => {
-    if (!currentMapId) return; // マップIDがない場合は保存しない
-
-    const allMaps = loadAllMaps(); // 全マップを取得
-
-    // 現在のマップを更新
-    allMaps[currentMapId] = {
-      name: allMaps[currentMapId]?.name || '新しいマップ',
-      nodes: nodes,
-      edges: edges
-    };
-
-    // 全マップを保存
-    localStorage.setItem('mindmaps', JSON.stringify(allMaps));
-    alert('保存しました！');
-  };
-
-  // ノード編集
-  const editNode = () => {
-    if (!selectedNode) return alert('編集したいノードを選択してください');
-    const newLabel = prompt('新しいラベルを入力してください', selectedNode.data.label);
-    if (!newLabel) return;
-    setNodes((nds) =>
-      nds.map((n) => (n.id === selectedNode.id ? { ...n, data: { label: newLabel } } : n))
-    );
-  };
-
-  // 折りたたみ
-  const toggleChildren = (nodeId) => {
-    const childIds = getDescendants(nodeId);
-    setNodes((nds) =>
-      nds.map((n) =>
-        childIds.includes(n.id) ? { ...n, hidden: !nds.find((x) => x.id === n.id)?.hidden } : n
-      )
-    );
-  };
-
-  // 子ノード取得
-  const getDescendants = (parentId) => {
-    const children = edges.filter((e) => e.source === parentId).map((e) => e.target);
-    let all = [...children];
-    children.forEach((childId) => {
-      all = [...all, ...getDescendants(childId)];
+      return newHistory;
     });
-    return [parentId, ...all];
-  };
+  }, [history, setNodes, setEdges]);
 
-  // キーボードイベント処理
-  const handleKeyDown = useCallback((event) => {
-    if (event.key === 'Tab') {
-      event.preventDefault(); // ブラウザのデフォルト動作を防止
-      if (selectedNode) {
-        addNode(); // 右側にノードを追加
-      }
+  const updateLabel = useCallback((id, label) => {
+    setNodes((nds) => {
+      const nextNodes = nds.map((n) =>
+        n.id === id ? { ...n, data: { ...n.data, label } } : n
+      );
+
+      // 文字が確定したタイミングで現在の状態を履歴に保存
+      // これにより、文字変更後でも Ctrl+Z で戻せるようになります
+      pushHistory(nextNodes, edges);
+
+      return nextNodes;
+    });
+  }, [setNodes, edges, pushHistory]);
+
+  const nodeTypes = useMemo(() => ({
+    custom: (props) => <CustomNode {...props} onLabelChange={updateLabel} hasLeft={edges.some(e => e.target === props.id)} hasRight={edges.some(e => e.source === props.id)} />
+  }), [edges, updateLabel]);
+
+  // ノード追加/削除
+  const addNode = useCallback(() => {
+    if (!selected) return;
+
+    // 1. まず現在の状態を保存（ノードを作る前の状態）
+    pushHistory(nodes, edges);
+
+    const id = uuidv4();
+    const newNode = {
+      id,
+      type: 'custom',
+      position: { x: selected.position.x + 240, y: selected.position.y },
+      data: { label: '新規項目', color: selected.data.color }
+    };
+
+    const nextNodes = [...nodes, newNode];
+    const nextEdges = [...edges, { id: uuidv4(), source: selected.id, target: id }];
+
+    // 2. ノードを追加し終えた状態も履歴に保存（これが文字編集からの戻り先になる）
+    setNodes(nextNodes);
+    setEdges(nextEdges);
+    pushHistory(nextNodes, nextEdges);
+
+  }, [selected, nodes, edges, setNodes, setEdges, pushHistory]);
+
+  const deleteNode = useCallback(() => {
+    if (!selected) return;
+    pushHistory(nodes, edges);
+    const getChildren = (id) => edges.filter(e => e.source === id).reduce((acc, e) => [...acc, e.target, ...getChildren(e.target)], []);
+    const targets = [selected.id, ...getChildren(selected.id)];
+    setNodes(nds => nds.filter(n => !targets.includes(n.id)));
+    setEdges(eds => eds.filter(e => !targets.includes(e.source) && !targets.includes(e.target)));
+    setSelected(null);
+  }, [selected, nodes, edges, setNodes, setEdges, pushHistory]);
+
+  // ショートカット
+  useEffect(() => {
+    const down = (e) => {
+      if (view !== 'edit') return;
+      if (e.key === 'Tab') { e.preventDefault(); addNode(); }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && e.target.tagName !== 'INPUT') deleteNode();
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
+    };
+    window.addEventListener('keydown', down);
+    return () => window.removeEventListener('keydown', down);
+  }, [view, addNode, deleteNode, undo]);
+
+  // 自動保存
+  useEffect(() => {
+    if (view === 'edit' && mapId) {
+      const saved = JSON.parse(localStorage.getItem('mindmaps') || '{}');
+      saved[mapId] = { ...saved[mapId], nodes, edges };
+      localStorage.setItem('mindmaps', JSON.stringify(saved));
     }
-  }, [selectedNode]);
+  }, [nodes, edges, mapId, view]);
 
-  // キーボードイベントリスナーを登録
-  React.useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [handleKeyDown]);
-
-  // 自動保存: nodesかedgesが変更されたら自動で保存
-  React.useEffect(() => {
-    if (!currentMapId) return; // マップIDがない場合は保存しない
-
-    const allMaps = loadAllMaps();
-
-    allMaps[currentMapId] = {
-      name: allMaps[currentMapId]?.name || '新しいマップ',
-      nodes: nodes,
-      edges: edges
-    };
-
-    localStorage.setItem('mindmaps', JSON.stringify(allMaps));  // 保存
-    console.log('自動保存しました');
-  }, [nodes, edges, currentMapId]);  // nodesかedgesかcurrentMapIdが変わったら実行
-
-  //新しいマップを作製
-  const createNewMap = () => {
-    const newMapId = uuidv4();
-    const allMaps = loadAllMaps();
-
-    allMaps[newMapId] = {
-      name: '新しいマップ',
-      nodes: [
-        {
-          id: '1',
-          type: 'custom',
-          position: { x: 250, y: 0 },
-          date: { label: '新しいマインドマップ' }
-        }
-      ],
-      edges: []
-    };
-
-    localStorage.setItem('mindmaps', JSON.stringify(allMaps));
-
-    setCurrentMapId(newMapId);
-    setCurrentView('edit');
-  };
-  //マップを選択して開く
-  const openMap = (mapId) => {
-    const mapData = loadSaveMap(mapId);
-
-    if (!mapData) {
-      alert('マップが見つかりません');
-      return;
-    }
-
-    //ノードとエッジを更新
-    setNodes(mapData.nodes || []);
-    setEdges(mapData.edges || []);
-
-    setCurrentMapId(mapId);
-    setCurrentView('edit');
-  };
-  //一覧に戻る
-  const backToList = () => {
-    setCurrentView('list');
-    setCurrentMapId(null);
-  };
-
-  //一覧画面を表示する場合
-  if (currentView === 'list') {
-    return <MapListView onSelectMap={openMap} onCreateMap={createNewMap} />;
-  }
+  if (view === 'list') return <MapListView onSelect={(id) => {
+    const d = JSON.parse(localStorage.getItem('mindmaps'))[id];
+    setNodes(d.nodes); setEdges(d.edges); setMapId(id); setView('edit');
+    setHistory([{ n: d.nodes, e: d.edges }]);
+  }} onCreate={() => {
+    const id = uuidv4();
+    const init = { name: '新しいマップ', nodes: [{ id: '1', type: 'custom', position: { x: 100, y: 100 }, data: { label: '中心', color: '#333' } }], edges: [] };
+    const saved = JSON.parse(localStorage.getItem('mindmaps') || '{}');
+    saved[id] = init; localStorage.setItem('mindmaps', JSON.stringify(saved));
+    setNodes(init.nodes); setEdges(init.edges); setMapId(id); setView('edit');
+  }} />;
 
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
-      <div style={{
-        position: 'absolute',
-        zIndex: 10,
-        left: 10,
-        top: 10,
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: '5px'
-      }}>
-        <button
-          onClick={backToList}
-          style={{
-            padding: '12px 16px',
-            fontSize: '16px',
-            touchAction: 'manipulation',
-            background: '#6c757d',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer'
-          }}
-        >
-          ← 一覧に戻る
-        </button>
-
-        <button
-          onClick={addNode}
-          style={{
-            padding: '12px 16px',
-            fontSize: '16px',
-            touchAction: 'manipulation'
-          }}
-        >
-          ノードを追加
-        </button>
-        <button
-          onClick={editNode}
-          style={{
-            padding: '12px 16px',
-            fontSize: '16px',
-            touchAction: 'manipulation'
-          }}
-        >
-          ✏️ 編集
-        </button>
-        <button
-          onClick={deleteNode}
-          style={{
-            padding: '12px 16px',
-            fontSize: '16px',
-            touchAction: 'manipulation'
-          }}
-        >
-          🗑 削除
-        </button>
-        <button
-          onClick={saveMap}
-          style={{
-            padding: '12px 16px',
-            fontSize: '16px',
-            touchAction: 'manipulation'
-          }}
-        >
-          💾 保存
-        </button>
+      <div style={{ position: 'absolute', top: 20, left: 20, zIndex: 10, display: 'flex', gap: '8px' }}>
+        <button onClick={() => setView('list')} style={{ padding: '8px 15px', borderRadius: '5px', background: '#333', color: 'white', border: 'none', cursor: 'pointer' }}>一覧へ</button>
+        <button onClick={addNode} style={{ padding: '8px 15px', background: 'white', border: '1px solid #ccc', borderRadius: '5px' }}>追加 (Tab)</button>
+        <button onClick={deleteNode} style={{ padding: '8px 15px', background: 'white', border: '1px solid #ccc', borderRadius: '5px' }}>削除 (Del)</button>
+        <button onClick={undo} style={{ padding: '8px 15px', background: 'white', border: '1px solid #ccc', borderRadius: '5px' }}>Undo (Ctrl+Z)</button>
       </div>
-      <ReactFlow
-        nodes={nodes.filter((n) => !n.hidden)}
-        edges={edges.filter(
-          (e) => !nodes.find((n) => n.id === e.source)?.hidden && !nodes.find((n) => n.id === e.target)?.hidden
-        )}
-        nodeTypes={customNodeTypes}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onNodeClick={(event, node) => {
-          // シングルクリックで選択のみ
-          setSelectedNode(node);
-        }}
-        fitView
+      <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={(p) => setEdges(eds => addEdge(p, eds))} nodeTypes={nodeTypes} onNodeClick={(_, n) => setSelected(n)} onPaneClick={() => setSelected(null)}
+        fitView // 最初の1回だけ
+        fitViewOptions={{ maxZoom: 1 }}
       >
-        <MiniMap />
-        <Controls />
-        <Background />
+        <Background /><Controls /><MiniMap />
       </ReactFlow>
+      <ColorPicker selectedNode={selected} onColorChange={(c) => { pushHistory(nodes, edges); setNodes(nds => nds.map(n => n.id === selected.id ? { ...n, data: { ...n.data, color: c } } : n)); }} />
     </div>
   );
 }
