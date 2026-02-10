@@ -118,10 +118,27 @@ export default function App() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selected, setSelected] = useState(null);
   const [history, setHistory] = useState([]);
+  // Appコンポーネントの先頭あたりに追加
+  const isSavingRef = useRef(false);
 
-  // 履歴保存
   const pushHistory = useCallback((n, e) => {
-    setHistory(prev => [...prev.slice(-20), { n: JSON.parse(JSON.stringify(n)), e: JSON.parse(JSON.stringify(e)) }]);
+    // すでに保存処理中の場合は、連続保存をブロックする
+    if (isSavingRef.current) return;
+
+    isSavingRef.current = true;
+
+    setHistory(prev => {
+      const nextHistory = [
+        ...prev.slice(-20),
+        { n: JSON.parse(JSON.stringify(n)), e: JSON.parse(JSON.stringify(e)) }
+      ];
+      return nextHistory;
+    });
+
+    // 数ミリ秒後にロックを解除（連続実行を物理的に防ぐ）
+    setTimeout(() => {
+      isSavingRef.current = false;
+    }, 100);
   }, []);
 
   const undo = useCallback(() => {
