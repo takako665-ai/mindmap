@@ -11,6 +11,8 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { v4 as uuidv4 } from 'uuid';
+import { IoIosAddCircleOutline } from "react-icons/io";
+import { IoIosTrash, IoIosUndo, IoIosColorPalette, IoIosHome, IoIosShare } from "react-icons/io";
 
 /**
  * 【超重要】エラーの強制停止
@@ -30,6 +32,41 @@ if (typeof window !== 'undefined') {
     }
   });
 }
+
+
+// --- デザインの設定（ここを追加） ---
+const toolbarStyle = {
+  position: 'fixed',
+  top: '20px',
+  right: '20px', // 右上に配置
+  display: 'flex',
+  gap: '10px',
+  padding: '10px',
+  background: 'rgba(255, 255, 255, 0.8)', // ガラス風の半透明
+  backdropFilter: 'blur(8px)',
+  borderRadius: '12px',
+  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12)',
+  border: '1px solid rgba(255, 255, 255, 0.4)',
+  zIndex: 1000,
+};
+
+const buttonStyle = {
+  padding: '8px 16px',
+  borderRadius: '8px',
+  border: 'none',
+  background: '#fff',
+  color: '#444',
+  fontWeight: 'bold',
+  fontSize: '13px',
+  cursor: 'pointer',
+  transition: 'all 0.2s ease',
+  boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+  display: 'inline-flex',   // 横並びにする
+  alignItems: 'center',     // アイコンと文字の「中心」を揃える
+  justifyContent: 'center', // 中身を中央に寄せる
+  gap: '8px',               // アイコンと文字の間の隙間
+  lineHeight: '1',          // 文字の余計な上下余白を消す
+};
 
 // --- 1. カラーピッカー ---
 const ColorPicker = ({ selectedNode, onColorChange }) => {
@@ -93,7 +130,7 @@ const MapListView = ({ onSelect, onCreate }) => {
       <h1>🧠 MindMap List</h1>
       <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
         <button onClick={onCreate} style={{ padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>＋ 新規作成</button>
-        <button onClick={exportAll} style={{ padding: '10px 20px', background: '#007bff', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>📤 バックアップ</button>
+        <button onClick={exportAll} style={{ ...buttonStyle, background: '#007bff', color: 'white' }}><IoIosShare size={20} style={{ transform: 'translateY(-1.5px)',marginRight: '-5px' } }/> バックアップ</button>
       </div>
       <div style={{ display: 'grid', gap: '10px' }}>
         {Object.entries(maps).map(([id, m]) => (
@@ -118,6 +155,8 @@ export default function App() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selected, setSelected] = useState(null);
   const [history, setHistory] = useState([]);
+  const [showPicker, setShowPicker] = useState(false);
+
   // Appコンポーネントの先頭あたりに追加
   const isSavingRef = useRef(false);
 
@@ -250,10 +289,21 @@ export default function App() {
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
       <div style={{ position: 'absolute', top: 20, left: 20, zIndex: 10, display: 'flex', gap: '8px' }}>
-        <button onClick={() => setView('list')} style={{ padding: '8px 15px', borderRadius: '5px', background: '#333', color: 'white', border: 'none', cursor: 'pointer' }}>一覧へ</button>
-        <button onClick={addNode} style={{ padding: '8px 15px', background: 'white', border: '1px solid #ccc', borderRadius: '5px' }}>追加 (Tab)</button>
-        <button onClick={deleteNode} style={{ padding: '8px 15px', background: 'white', border: '1px solid #ccc', borderRadius: '5px' }}>削除 (Del)</button>
-        <button onClick={undo} style={{ padding: '8px 15px', background: 'white', border: '1px solid #ccc', borderRadius: '5px' }}>Undo (Ctrl+Z)</button>
+        <button onClick={addNode} style={buttonStyle}>
+          <IoIosAddCircleOutline size={20} /> 追加 (Tab)
+        </button>
+
+        <button onClick={deleteNode} style={buttonStyle}>
+          🗑️ 削除 (Del)
+        </button>
+
+        <button onClick={undo} style={buttonStyle} disabled={history.length < 2}>
+          ↩️ 戻す (Ctrl+Z)
+        </button>
+
+        <button onClick={() => setShowPicker(!showPicker)} style={buttonStyle}>
+          🎨 色変更
+        </button>
       </div>
       <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={(p) => setEdges(eds => addEdge(p, eds))} nodeTypes={nodeTypes} onNodeClick={(_, n) => setSelected(n)} onPaneClick={() => setSelected(null)}
         fitView // 最初の1回だけ
