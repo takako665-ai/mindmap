@@ -12,7 +12,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { v4 as uuidv4 } from 'uuid';
 import { IoIosAddCircleOutline } from "react-icons/io";
-import { IoIosTrash, IoIosUndo, IoIosColorPalette, IoIosHome, IoIosShare } from "react-icons/io";
+import { IoIosShare } from "react-icons/io";
 
 /**
  * 【超重要】エラーの強制停止
@@ -32,23 +32,6 @@ if (typeof window !== 'undefined') {
     }
   });
 }
-
-
-// --- デザインの設定（ここを追加） ---
-const toolbarStyle = {
-  position: 'fixed',
-  top: '20px',
-  right: '20px', // 右上に配置
-  display: 'flex',
-  gap: '10px',
-  padding: '10px',
-  background: 'rgba(255, 255, 255, 0.8)', // ガラス風の半透明
-  backdropFilter: 'blur(8px)',
-  borderRadius: '12px',
-  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12)',
-  border: '1px solid rgba(255, 255, 255, 0.4)',
-  zIndex: 1000,
-};
 
 const buttonStyle = {
   padding: '8px 16px',
