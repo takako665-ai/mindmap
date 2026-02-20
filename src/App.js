@@ -102,9 +102,18 @@ const CustomNode = React.memo(({ id, data, hasLeft, hasRight, onLabelChange }) =
     <div style={{ padding: '10px 15px', border: `2px solid ${data.color || '#333'}`, borderRadius: '8px', background: 'white', minWidth: '100px', textAlign: 'center' }} onDoubleClick={() => setIsEditing(true)}>
       <Handle type="target" position={Position.Left} style={{ opacity: hasLeft ? 1 : 0.2 }} />
       {isEditing ? (
-        <input ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} onBlur={save} onKeyDown={(e) => e.key === 'Enter' && save()} style={{ border: 'none', outline: 'none', width: '100%', textAlign: 'center' }} />
+        // ★ input を textarea に変更し、Enterで保存されないようにする
+        <textarea
+          ref={inputRef}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={save}
+          // Enter単体では改行させたいので、save() の条件を Shift+Enter に変更
+          onKeyDown={(e) => e.key === 'Enter' && e.shiftKey && save()}
+          style={{ border: 'none', outline: 'none', width: '100%', textAlign: 'center', resize: 'none', fontFamily: 'inherit' }}
+        />
       ) : (
-        <div style={{ fontWeight: 'bold' }}>{data.label}</div>
+        <div style={{ fontWeight: 'bold', whiteSpace: 'pre-wrap' }}>{data.label}</div>
       )}
       <Handle type="source" position={Position.Right} style={{ opacity: hasRight ? 1 : 0.2 }} />
     </div>
@@ -130,7 +139,7 @@ const MapListView = ({ onSelect, onCreate }) => {
       <h1>🧠 MindMap List</h1>
       <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
         <button onClick={onCreate} style={{ padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>＋ 新規作成</button>
-        <button onClick={exportAll} style={{ ...buttonStyle, background: '#007bff', color: 'white' }}><IoIosShare size={20} style={{ transform: 'translateY(-1.5px)',marginRight: '-5px' } }/> バックアップ</button>
+        <button onClick={exportAll} style={{ ...buttonStyle, background: '#007bff', color: 'white' }}><IoIosShare size={20} style={{ transform: 'translateY(-1.5px)', marginRight: '-5px' }} /> バックアップ</button>
       </div>
       <div style={{ display: 'grid', gap: '10px' }}>
         {Object.entries(maps).map(([id, m]) => (
@@ -226,10 +235,11 @@ export default function App() {
     pushHistory(nodes, edges);
 
     const id = uuidv4();
+    const siblingCount = nodes.filter(n => n.position.x === selected.position.x + 240).length;
     const newNode = {
       id,
       type: 'custom',
-      position: { x: selected.position.x + 240, y: selected.position.y },
+      position: { x: selected.position.x + 240, y: selected.position.y+ (siblingCount * 60) },
       data: { label: '新規項目', color: selected.data.color }
     };
 
