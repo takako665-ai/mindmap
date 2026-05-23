@@ -1,38 +1,272 @@
-.App {
-  text-align: center;
+* {
+  box-sizing: border-box;
 }
 
-.App-logo {
-  height: 40vmin;
+/* Prevent double-tap zoom so double-tap editing works on nodes */
+body {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ===== Map List View ===== */
+.list-container {
+  padding: 40px;
+  max-width: 800px;
+  margin: 0 auto;
+  font-family: sans-serif;
+}
+
+.list-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.list-btn {
+  padding: 10px 18px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  min-height: 42px;
+}
+
+.list-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.list-item {
+  border: 1px solid #ddd;
+  padding: 15px;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.list-item-name {
+  flex: 1;
+  font-size: 15px;
+  background: none;
+  border: none;
+  cursor: text;
+  padding: 2px 0;
+  min-width: 0;
+  font-family: inherit;
+}
+
+.list-item-name:focus {
+  outline: 2px solid #007bff;
+  border-radius: 4px;
+  padding: 2px 6px;
+  background: #fff;
+}
+
+.list-item-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ===== Editor ===== */
+.editor-root {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+}
+
+.editor-toolbar {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 10;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.toolbar-btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: none;
+  background: #fff;
+  color: #444;
+  font-weight: bold;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  line-height: 1;
+  white-space: nowrap;
+  min-height: 36px;
+  transition: background 0.15s;
+}
+
+.toolbar-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.toolbar-btn:not(:disabled):active {
+  background: #f0f0f0;
+}
+
+.map-title-chip {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 6px 16px;
+  border-radius: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  font-size: 14px;
+  font-weight: bold;
+  color: #444;
+  max-width: 38vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   pointer-events: none;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
-}
-
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
+/* ===== Color Picker ===== */
+.color-picker {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 30px;
+  padding: 10px 20px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+  z-index: 1001;
   display: flex;
-  flex-direction: column;
+  gap: 10px;
   align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
 }
 
-.App-link {
-  color: #61dafb;
+.color-dot {
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.1s;
+  border: 2px solid #eee;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
+.color-dot:hover {
+  transform: scale(1.2);
+}
+
+.color-dot.active {
+  border: 3px solid #000;
+}
+
+/* ===== Mobile (<=768px) ===== */
+@media (max-width: 768px) {
+  /* List */
+  .list-container {
+    padding: 20px 16px 28px;
   }
-  to {
-    transform: rotate(360deg);
+
+  .list-actions {
+    gap: 8px;
+  }
+
+  .list-btn {
+    flex: 1;
+    min-width: calc(50% - 4px);
+    padding: 12px 10px;
+    font-size: 13px;
+  }
+
+  .list-item {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 14px;
+    gap: 10px;
+  }
+
+  .list-item-name {
+    font-size: 16px;
+    width: 100%;
+  }
+
+  .list-item-actions {
+    gap: 8px;
+    width: 100%;
+  }
+
+  .list-item-actions button {
+    flex: 1;
+    padding: 10px 8px !important;
+    font-size: 14px !important;
+    min-height: 44px;
+  }
+
+  /* Editor toolbar becomes fixed bottom bar */
+  .editor-toolbar {
+    position: fixed !important;
+    top: auto !important;
+    left: 0 !important;
+    right: 0;
+    bottom: 0;
+    background: #fff;
+    padding: 6px 8px;
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.08);
+    justify-content: space-around;
+    gap: 4px;
+    border-top: 1px solid #eaeaea;
+    height: 64px;
+    z-index: 20;
+  }
+
+  .toolbar-btn {
+    flex: 1;
+    flex-direction: column;
+    font-size: 10px;
+    padding: 6px 2px;
+    gap: 2px;
+    border-radius: 8px;
+    box-shadow: none;
+    min-height: 52px;
+  }
+
+  .btn-shortcut {
+    display: none;
+  }
+
+  .map-title-chip {
+    top: 10px;
+    font-size: 12px;
+    padding: 5px 12px;
+    max-width: 55vw;
+  }
+
+  /* Color picker floats above bottom toolbar */
+  .color-picker {
+    bottom: 72px !important;
+    gap: 14px;
+    padding: 12px 18px;
+  }
+
+  .color-dot {
+    width: 32px !important;
+    height: 32px !important;
   }
 }
