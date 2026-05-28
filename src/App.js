@@ -70,17 +70,29 @@ const ColorPicker = ({ selectedNode, onColorChange }) => {
 };
 
 // ---- 2. Custom Node ----
-const CustomNode = React.memo(({ id, data, hasLeft, hasRight, onLabelChange, isCollapsed, hasChildren, onToggleCollapse }) => {
+const CustomNode = React.memo(({ id, data, hasLeft, hasRight, onNodeDataChange, isCollapsed, hasChildren, onToggleCollapse }) => {
   const [isEditing, setIsEditing] = useState(false);
-  const [text, setText] = useState(data.label);
-  const inputRef = useRef(null);
+  const [labelText, setLabelText] = useState(data.label);
+  const [memoText, setMemoText] = useState(data.memo || '');
+  const labelRef = useRef(null);
 
-  useEffect(() => { if (isEditing) inputRef.current?.focus(); }, [isEditing]);
+  useEffect(() => { if (isEditing) labelRef.current?.focus(); }, [isEditing]);
+  // モバイルのprompt編集など外部からラベルが変わった場合に同期
+  useEffect(() => { if (!isEditing) setLabelText(data.label); }, [data.label, isEditing]);
+  useEffect(() => { if (!isEditing) setMemoText(data.memo || ''); }, [data.memo, isEditing]);
 
-  // Sync label when changed externally (e.g. mobile prompt edit)
-  useEffect(() => { if (!isEditing) setText(data.label); }, [data.label, isEditing]);
+  const save = (e) => {
+    // フォーカスがノード内の別要素に移った場合は保存しない
+    if (e.currentTarget.contains(e.relatedTarget)) return;
+    onNodeDataChange(id, { label: labelText, memo: memoText });
+    setIsEditing(false);
+  };
 
-  const save = () => { onLabelChange(id, text); setIsEditing(false); };
+  const cancel = () => {
+    setLabelText(data.label);
+    setMemoText(data.memo || '');
+    setIsEditing(false);
+  };
 
   const progressIcon = data.progress === 'done' ? '✓' : data.progress === 'review' ? '★' : null;
   const progressColor = data.progress === 'done' ? '#28a745' : data.progress === 'review' ? '#ffc107' : null;
@@ -93,15 +105,16 @@ const CustomNode = React.memo(({ id, data, hasLeft, hasRight, onLabelChange, isC
         borderRadius: '8px',
         background: data.searchHighlight ? '#fff9c4' : 'white',
         minWidth: '100px',
+        maxWidth: '220px',
         textAlign: 'center',
         position: 'relative',
         outline: data.searchHighlight ? `2px solid #f9a825` : 'none',
       }}
-      onDoubleClick={() => setIsEditing(true)}
+      onDoubleClick={() => !isEditing && setIsEditing(true)}
+      onBlur={save}
     >
       <Handle type="target" position={Position.Left} style={{ opacity: hasLeft ? 1 : 0.2 }} />
 
-      {/* Progress badge */}
       {progressIcon && (
         <div
           style={{
@@ -127,21 +140,47 @@ const CustomNode = React.memo(({ id, data, hasLeft, hasRight, onLabelChange, isC
       )}
 
       {isEditing ? (
-        <textarea
-          ref={inputRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onBlur={save}
-          onKeyDown={(e) => e.key === 'Enter' && e.shiftKey && save()}
-          style={{ border: 'none', outline: 'none', width: '100%', textAlign: 'center', resize: 'none', fontFamily: 'inherit' }}
-        />
+        <div>
+          <textarea
+            ref={labelRef}
+            value={labelText}
+            onChange={(e) => setLabelText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Escape' && cancel()}
+            style={{ border: 'none', outline: 'none', width: '100%', textAlign: 'center', resize: 'none', fontFamily: 'inherit', fontWeight: 'bold' }}
+            rows={2}
+          />
+          <textarea
+            value={memoText}
+            onChange={(e) => setMemoText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Escape' && cancel()}
+            placeholder="メモ（任意）"
+            style={{ border: 'none', outline: '1px solid #eee', width: '100%', resize: 'none', fontFamily: 'inherit', fontSize: 11, color: '#666', marginTop: 4, borderRadius: 4, padding: '2px 4px' }}
+            rows={3}
+          />
+        </div>
       ) : (
-        <div style={{ fontWeight: 'bold', whiteSpace: 'pre-wrap' }}>{data.label}</div>
+        <div>
+          <div style={{ fontWeight: 'bold', whiteSpace: 'pre-wrap' }}>{data.label}</div>
+          {data.memo && (
+            <div style={{
+              fontSize: 11,
+              color: '#888',
+              marginTop: 4,
+              textAlign: 'left',
+              lineHeight: 1.4,
+              display: '-webkit-box',
+              WebkitLineClamp: 3,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+            }}>
+              {data.memo}
+            </div>
+          )}
+        </div>
       )}
 
       <Handle type="source" position={Position.Right} style={{ opacity: hasRight ? 1 : 0.2 }} />
 
-      {/* Collapse toggle button */}
       {hasChildren && (
         <button
           onClick={(e) => { e.stopPropagation(); onToggleCollapse(id); }}
@@ -175,7 +214,9 @@ const CustomNode = React.memo(({ id, data, hasLeft, hasRight, onLabelChange, isC
 });
 
 // ---- 3. Bottom Sheet (mobile context menu) ----
-const BottomSheet = ({ node, onClose, onEdit, onDelete, onAddChild, onColorChange, onProgressChange, isCollapsed, hasChildren, onToggleCollapse }) => {
+const BottomSheet = ({ node, onClose, onEdit, onDelete, onAddChild, onColorChange, onProgressChange, onMemoChange, isCollapsed, hasChildren, onToggleCollapse }) => {
+  const [memoText, setMemoText] = useState(node.data.memo || '');
+
   const colors = [
     { name: '標準', value: '#333' },
     { name: '重要', value: '#dc3545' },
@@ -230,6 +271,17 @@ const BottomSheet = ({ node, onClose, onEdit, onDelete, onAddChild, onColorChang
             ★ 要復習
           </button>
         </div>
+
+        {/* Memo */}
+        <div className="bottom-sheet-section-label">メモ</div>
+        <textarea
+          className="bs-memo-textarea"
+          value={memoText}
+          onChange={(e) => setMemoText(e.target.value)}
+          onBlur={() => { if (memoText !== (node.data.memo || '')) onMemoChange(memoText); }}
+          placeholder="詳細メモを入力..."
+          rows={3}
+        />
 
         {/* Color picker */}
         <div className="bottom-sheet-section-label">ノードカラー</div>
@@ -468,6 +520,31 @@ export default function App() {
     });
   }, [setNodes, edges, pushHistory]);
 
+  // デスクトップのノード編集（ラベル+メモを1回のhistoryエントリで保存）
+  const updateNodeData = useCallback((id, updates) => {
+    setNodes((nds) => {
+      const nextNodes = nds.map((n) =>
+        n.id === id ? { ...n, data: { ...n.data, ...updates } } : n
+      );
+      pushHistory(nextNodes, edges);
+      return nextNodes;
+    });
+  }, [setNodes, edges, pushHistory]);
+
+  const updateMemo = useCallback((id, memo) => {
+    setNodes((nds) => {
+      const nextNodes = nds.map((n) =>
+        n.id === id ? { ...n, data: { ...n.data, memo } } : n
+      );
+      pushHistory(nextNodes, edges);
+      return nextNodes;
+    });
+    setBottomSheet(prev => prev && prev.id === id
+      ? { ...prev, data: { ...prev.data, memo } }
+      : prev
+    );
+  }, [setNodes, edges, pushHistory]);
+
   // ---- Collapse logic ----
   // Get all descendant IDs for a given node
   const getDescendants = useCallback((nodeId, edgeList) => {
@@ -513,7 +590,7 @@ export default function App() {
         <CustomNode
           {...props}
           data={{ ...props.data, searchHighlight: isHighlighted }}
-          onLabelChange={updateLabel}
+          onNodeDataChange={updateNodeData}
           hasLeft={edges.some(e => e.target === props.id)}
           hasRight={hasChildren}
           hasChildren={hasChildren}
@@ -522,7 +599,7 @@ export default function App() {
         />
       );
     }
-  }), [edges, updateLabel, collapsedNodes, toggleCollapse, searchQuery]);
+  }), [edges, updateNodeData, collapsedNodes, toggleCollapse, searchQuery]);
 
   // Apply hidden state to nodes
   const displayNodes = useMemo(() => {
@@ -836,6 +913,7 @@ export default function App() {
             setBottomSheet(prev => prev ? { ...prev, data: { ...prev.data, color: c } } : prev);
           }}
           onProgressChange={(p) => updateProgress(bottomSheet.id, p)}
+          onMemoChange={(memo) => updateMemo(bottomSheet.id, memo)}
         />
       )}
     </div>

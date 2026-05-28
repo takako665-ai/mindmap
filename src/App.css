@@ -363,6 +363,24 @@ body {
   color: #856404;
 }
 
+.bs-memo-textarea {
+  width: 100%;
+  border: 1.5px solid #eaeaea;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #444;
+  resize: none;
+  outline: none;
+  margin-bottom: 18px;
+  line-height: 1.5;
+}
+
+.bs-memo-textarea:focus {
+  border-color: #007bff;
+}
+
 .bottom-sheet-colors {
   display: flex;
   gap: 14px;
