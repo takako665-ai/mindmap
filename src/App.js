@@ -70,7 +70,7 @@ const ColorPicker = ({ selectedNode, onColorChange }) => {
 };
 
 // ---- 2. Custom Node ----
-const CustomNode = React.memo(({ id, data, hasLeft, hasRight, onNodeDataChange, isCollapsed, hasChildren, onToggleCollapse }) => {
+const CustomNode = React.memo(({ id, data, selected, hasLeft, hasRight, onNodeDataChange, isCollapsed, hasChildren, onToggleCollapse }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [labelText, setLabelText] = useState(data.label);
   const [memoText, setMemoText] = useState(data.memo || '');
@@ -161,7 +161,7 @@ const CustomNode = React.memo(({ id, data, hasLeft, hasRight, onNodeDataChange, 
       ) : (
         <div>
           <div style={{ fontWeight: 'bold', whiteSpace: 'pre-wrap' }}>{data.label}</div>
-          {data.memo && (
+          {data.memo && selected && (
             <div style={{
               fontSize: 11,
               color: '#888',
@@ -344,11 +344,9 @@ const MapListView = ({ onSelect, onCreate }) => {
 
   const saveRename = (id) => {
     const trimmed = renameText.trim();
-    if (trimmed) {
-      const updated = { ...maps, [id]: { ...maps[id], name: trimmed } };
-      setMaps(updated);
-      localStorage.setItem('mindmaps', JSON.stringify(updated));
-    }
+    const updated = { ...maps, [id]: { ...maps[id], name: trimmed } };
+    setMaps(updated);
+    localStorage.setItem('mindmaps', JSON.stringify(updated));
     setRenamingId(null);
   };
 
@@ -475,18 +473,12 @@ export default function App() {
   const [history, setHistory] = useState([]);
   const [showPicker, setShowPicker] = useState(false);
 
-  // --- New state ---
-  // collapsedNodes: Set of node IDs whose children are hidden
   const [collapsedNodes, setCollapsedNodes] = useState(new Set());
-  // bottomSheet: node shown in bottom sheet (mobile context menu), or null
   const [bottomSheet, setBottomSheet] = useState(null);
-  // showSearch: toggle search bar
   const [showSearch, setShowSearch] = useState(false);
-  // searchQuery: current search text
   const [searchQuery, setSearchQuery] = useState('');
 
   const isSavingRef = useRef(false);
-  // Long-press timer ref for mobile
   const longPressTimer = useRef(null);
 
   const pushHistory = useCallback((n, e) => {
@@ -545,8 +537,6 @@ export default function App() {
     );
   }, [setNodes, edges, pushHistory]);
 
-  // ---- Collapse logic ----
-  // Get all descendant IDs for a given node
   const getDescendants = useCallback((nodeId, edgeList) => {
     const children = edgeList.filter(e => e.source === nodeId).map(e => e.target);
     return children.reduce((acc, cid) => [...acc, cid, ...getDescendants(cid, edgeList)], []);
@@ -564,7 +554,6 @@ export default function App() {
     });
   }, []);
 
-  // Compute which nodes should be hidden due to collapsed ancestors
   const hiddenNodeIds = useMemo(() => {
     const hidden = new Set();
     collapsedNodes.forEach(collapsedId => {
@@ -573,12 +562,10 @@ export default function App() {
     return hidden;
   }, [collapsedNodes, edges, getDescendants]);
 
-  // ---- Search logic ----
   const handleSearch = useCallback((query) => {
     setSearchQuery(query);
   }, []);
 
-  // ---- Node types with all new features ----
   const nodeTypes = useMemo(() => ({
     custom: (props) => {
       const hasChildren = edges.some(e => e.source === props.id);
@@ -601,7 +588,6 @@ export default function App() {
     }
   }), [edges, updateNodeData, collapsedNodes, toggleCollapse, searchQuery]);
 
-  // Apply hidden state to nodes
   const displayNodes = useMemo(() => {
     return nodes.map(n => ({
       ...n,
@@ -609,7 +595,6 @@ export default function App() {
     }));
   }, [nodes, hiddenNodeIds]);
 
-  // Apply hidden state to edges (hide edges connected to hidden nodes)
   const displayEdges = useMemo(() => {
     return edges.map(e => ({
       ...e,
@@ -633,7 +618,6 @@ export default function App() {
     setNodes(nextNodes);
     setEdges(nextEdges);
     pushHistory(nextNodes, nextEdges);
-    // Auto-expand if parent was collapsed
     if (collapsedNodes.has(parentNode.id)) {
       setCollapsedNodes(prev => {
         const next = new Set(prev);
@@ -670,7 +654,6 @@ export default function App() {
     deleteNodeById(selected.id);
   }, [selected, deleteNodeById]);
 
-  // Mobile: use browser prompt for label editing
   const editSelectedNode = useCallback((node) => {
     const target = node || selected;
     if (!target) return;
@@ -679,7 +662,6 @@ export default function App() {
     setBottomSheet(null);
   }, [selected, updateLabel]);
 
-  // Mobile: update progress on a node
   const updateProgress = useCallback((nodeId, progress) => {
     setNodes((nds) => {
       const nextNodes = nds.map((n) =>
@@ -688,14 +670,12 @@ export default function App() {
       pushHistory(nextNodes, edges);
       return nextNodes;
     });
-    // Update bottomSheet node data too
     setBottomSheet(prev => prev && prev.id === nodeId
       ? { ...prev, data: { ...prev.data, progress } }
       : prev
     );
   }, [setNodes, edges, pushHistory]);
 
-  // Mobile: long-press handler
   const handleNodeTouchStart = useCallback((e, node) => {
     if (!isMobile) return;
     longPressTimer.current = setTimeout(() => {
@@ -711,7 +691,6 @@ export default function App() {
     }
   }, []);
 
-  // Keyboard shortcuts (desktop)
   useEffect(() => {
     const down = (e) => {
       if (view !== 'edit') return;
@@ -724,7 +703,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', down);
   }, [view, addNode, deleteNode, undo]);
 
-  // Auto-save (include collapsedNodes as array for localStorage)
   useEffect(() => {
     if (view === 'edit' && mapId) {
       const saved = JSON.parse(localStorage.getItem('mindmaps') || '{}');
@@ -738,7 +716,6 @@ export default function App() {
     }
   }, [nodes, edges, mapId, view, collapsedNodes]);
 
-  // Close picker when node is deselected
   useEffect(() => {
     if (!selected) setShowPicker(false);
   }, [selected]);
@@ -765,7 +742,6 @@ export default function App() {
           setMapName(d.name);
           setView('edit');
           setHistory([{ n: d.nodes, e: d.edges }]);
-          // Restore collapsed state
           setCollapsedNodes(new Set(d.collapsedNodes || []));
         }}
         onCreate={() => {
@@ -793,10 +769,8 @@ export default function App() {
 
   return (
     <div className="editor-root">
-      {/* Map title — center top */}
       <div className="map-title-chip">{mapName}</div>
 
-      {/* Search bar */}
       {showSearch && (
         <SearchBar
           onSearch={handleSearch}
@@ -804,7 +778,6 @@ export default function App() {
         />
       )}
 
-      {/* Toolbar: top-left on desktop, bottom bar on mobile (via CSS) */}
       <div className="editor-toolbar">
         <button onClick={backToList} className="toolbar-btn">
           ←<span className="btn-shortcut"> 一覧</span>
@@ -854,17 +827,10 @@ export default function App() {
         onEdgesChange={onEdgesChange}
         onConnect={(p) => setEdges(eds => addEdge(p, eds))}
         nodeTypes={nodeTypes}
-        onNodeClick={(_, n) => {
-          setSelected(n);
-          // On mobile: single tap selects, long press opens bottom sheet
-        }}
+        onNodeClick={(_, n) => { setSelected(n); }}
         onPaneClick={() => { setSelected(null); setBottomSheet(null); }}
         onNodeMouseEnter={undefined}
-        onNodeContextMenu={(e, n) => {
-          // Desktop right-click: could show context menu, skip for now
-          e.preventDefault();
-        }}
-        // Mobile long press via touch events on the wrapper
+        onNodeContextMenu={(e, n) => { e.preventDefault(); }}
         onNodeTouchStart={isMobile ? (e, n) => handleNodeTouchStart(e, n) : undefined}
         onNodeTouchEnd={isMobile ? handleNodeTouchEnd : undefined}
         fitView
@@ -887,7 +853,6 @@ export default function App() {
         />
       )}
 
-      {/* Bottom Sheet (mobile context menu) */}
       {isMobile && bottomSheet && (
         <BottomSheet
           node={bottomSheet}
